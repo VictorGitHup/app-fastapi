@@ -1,42 +1,49 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.responses import StreamingResponse
+import io
+from vtracer import convert_image_to_svg_py
+import shutil
 import os
-import vtracer
+
+# Resto de tu código aquí
+
+
+# Resto de tu código aquí
+
 
 app = FastAPI()
 
-# Directorio para guardar los archivos de entrada y salida
-input_dir = "input_images"
-output_dir = "output_images"
+@app.post("/convert-to-svg/")
+async def convert_to_svg(file: UploadFile = File(...)):
+    # Verificar el formato del archivo
+    if file.content_type not in ["image/jpeg", "image/png"]:
+        raise HTTPException(status_code=400, detail="Invalid file format.")
 
-# Asegurarse de que los directorios existan
-os.makedirs(input_dir, exist_ok=True)
-os.makedirs(output_dir, exist_ok=True)
+    # Preparar el nombre del archivo de entrada y salida
+    file_extension = file.filename.split('.')[-1]
+    if file_extension.lower() not in ['jpg', 'jpeg', 'png']:
+        raise HTTPException(status_code=400, detail="Invalid file extension.")
+    
+    input_path = f"temp/{file.filename}"
+    output_path = f"temp/{file.filename}.svg"
 
-# Ruta para cargar y convertir una imagen
-@app.post("/convert/")
-async def convert_image(file: UploadFile):
-    try:
-        # Ruta de entrada y salida
-        input_path = os.path.join(input_dir, file.filename)
-        output_path = os.path.join(output_dir, file.filename.replace(".jpg", ".svg"))
+    # Guarda el archivo subido en el sistema de archivos temporalmente
+    with open(input_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
 
-        # Guardar la imagen de entrada
-        with open(input_path, "wb") as image_file:
-            image_file.write(file.file.read())
+    # Convertir la imagen a SVG
+    convert_image_to_svg_py(input_path, output_path)
 
-        # Convertir la imagen
-        vtracer.convert_image_to_svg_py(input_path, output_path)
+    # Leer el archivo SVG resultante para enviarlo de vuelta al usuario
+    with open(output_path, "rb") as svg_file:
+        svg_content = svg_file.read()
 
-        # Devolver el archivo SVG convertido al usuario
-        return FileResponse(output_path, media_type="image/svg+xml", filename=file.filename.replace(".jpg", ".svg"))
-        # Devolver el archivo SVG convertido al usuario
-        #return FileResponse(output_path, media_type="image/svg+xml", filename=file.filename.replace(".jpg", ".svg"))
+    # Eliminar archivos temporales
+    os.remove(input_path)
+    os.remove(output_path)
 
-    except Exception as e:
-        # Manejo de errores
-        raise HTTPException(status_code=500, detail=f"Error durante la conversión: {str(e)}")
+    # Crear una respuesta de streaming para enviar el SVG directamente
+    response = StreamingResponse(io.BytesIO(svg_content), media_type="image/svg+xml")
+    response.headers["Content-Disposition"] = f"attachment; filename={file.filename}.svg"
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    return response

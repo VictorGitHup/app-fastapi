@@ -15,7 +15,7 @@ os.makedirs(output_directory, exist_ok=True)
 @app.post("/convert-to-svg/")
 async def convert_to_svg(file: UploadFile = File(...)):
     # Verificar el formato del archivo
-    if file.content_type not in ["image/jpeg", "image/png"]:
+    if file.content_type not in ["image/jpeg","image/jpg", "image/png"]:
         raise HTTPException(status_code=400, detail="Invalid file format.")
 
     # Preparar el nombre del archivo de entrada y salida

@@ -1,73 +1,50 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
-from starlette.responses import FileResponse
-from pathlib import Path
-import shutil
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.responses import FileResponse
+import vtracer
+import os
 import uuid
+import aiofiles
 
-from vtracer import convert_image_to_svg_py
 
 app = FastAPI()
 
-# Directorio donde se guardarán los archivos convertidos de manera temporal
-temp_directory = "temp"
+# Directorio donde se guardarán los archivos convertidos de manera permanente
 output_directory = "converted"
-
-# Asegúrate de que los directorios existen
-Path(temp_directory).mkdir(exist_ok=True)
-Path(output_directory).mkdir(exist_ok=True)
+os.makedirs(output_directory, exist_ok=True)
 
 @app.post("/convert-to-svg/")
-async def convert_to_svg(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+async def convert_to_svg(file: UploadFile = File(...)):
     # Verificar el formato del archivo
     if file.content_type not in ["image/jpeg", "image/png"]:
         raise HTTPException(status_code=400, detail="Invalid file format.")
-    
-    # Generar un nombre de archivo único para evitar colisiones
-    file_name = f"{uuid.uuid4()}.{file.filename.rsplit('.', 1)[-1].lower()}"
-    
-    input_path = Path(temp_directory) / file_name
-    output_path = Path(output_directory) / f"{file_name}.svg"
 
-    # Guardar el archivo subido temporalmente
-    with open(input_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    # Preparar el nombre del archivo de entrada y salida
+    filename_without_extension = os.path.splitext(file.filename)[0]
+    unique_filename = f"{filename_without_extension}_{uuid.uuid4()}"
+    input_path = os.path.join(output_directory, f"{unique_filename}.{file.content_type.split('/')[-1]}")
+    output_path = os.path.join(output_directory, f"{unique_filename}.svg")
 
-    # Llamar a la función de conversión en segundo plano
-    background_tasks.add_task(
-        convert_and_delete, input_path, output_path
-    )
+    # Guardar el archivo subido de manera temporal
+    async with aiofiles.open(input_path, 'wb') as out_file:
+        content = await file.read()  # async read
+        await out_file.write(content)  # async write
 
-    # Generar un enlace a la imagen convertida
-    converted_url = f"/download/{file_name}.svg"
-    
+    # Convertir la imagen a SVG
+    # Aquí estamos utilizando los valores predeterminados para la conversión
+    vtracer.convert_image_to_svg_py(input_path, output_path)
+
+    # Suponiendo que tienes un mecanismo para servir estos archivos, por ejemplo, un servidor estático
+    # La URL podría ser algo como 'http://<your-domain>/<path-to-static-files>/<output_filename>'
+    converted_url = f"https://18.218.25.223/converted/{unique_filename}.svg"
+
+    # Eliminar el archivo original después de la conversión para ahorrar espacio
+    os.remove(input_path)
+
     # Devolver la URL completa como respuesta
     return {"url": converted_url}
 
-@app.get("/download/{filename}")
-async def download_file(filename: str):
-    file_path = Path(output_directory) / filename
-    if not file_path.is_file():
-        raise HTTPException(status_code=404, detail="File not found.")
-    return FileResponse(path=file_path, filename=filename)
-
-async def convert_and_delete(input_path: Path, output_path: Path):
-    # Convertir la imagen a SVG
-    try:
-        convert_image_to_svg_py(input_path, output_path)
-    except Exception as e:
-        print(f"Error during conversion: {e}")
-        input_path.unlink(missing_ok=True)
-        raise HTTPException(status_code=500, detail="Error during conversion.")
-    finally:
-        # Eliminar el archivo de entrada temporal
-        input_path.unlink(missing_ok=True)
-
-# Asegúrate de que el directorio de salida esté limpio al iniciar y al salir de la aplicación
-@app.on_event("startup")
-async def startup_event():
-    shutil.rmtree(output_directory, ignore_errors=True)
-    Path(output_directory).mkdir(exist_ok=True)
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    shutil.rmtree(output_directory, ignore_errors=True)
+# Endpoint para servir los archivos convertidos
+@app.get("/converted/{filename}", response_class=FileResponse)
+async def get_converted_file(filename: str):
+    file_path = os.path.join(output_directory, filename)
+    return FileResponse(file_path)

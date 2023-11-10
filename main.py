@@ -8,6 +8,7 @@ from starlette.responses import FileResponse
 app = FastAPI()
 
 # Directorios para guardar los archivos de entrada y salida
+# V05_code fastapi
 input_dir = "input_images"
 output_dir = "output_images"
 

@@ -9,8 +9,8 @@ from uuid import uuid4
 app = FastAPI()
 
 # Directorios para guardar los archivos de entrada y salida
-input_dir = "/input_images"  # Debería ser una ruta absoluta en producción
-output_dir = "/output_images"  # Debería ser una ruta absoluta en producción
+input_dir = "input_images"  # Debería ser una ruta absoluta en producción
+output_dir = "output_images"  # Debería ser una ruta absoluta en producción
 
 # Crear directorios si no existen
 os.makedirs(input_dir, exist_ok=True)

@@ -2,15 +2,15 @@ from fastapi import FastAPI, File, UploadFile, HTTPException, Request
 from fastapi.responses import JSONResponse
 import os
 import shutil
-import vtracer  
+import vtracer
 from starlette.responses import FileResponse
+from uuid import uuid4
 
 app = FastAPI()
 
 # Directorios para guardar los archivos de entrada y salida
-# V05_code fastapi
-input_dir = "input_images"
-output_dir = "output_images"
+input_dir = "/path/to/input_images"  # Debería ser una ruta absoluta en producción
+output_dir = "/path/to/output_images"  # Debería ser una ruta absoluta en producción
 
 # Crear directorios si no existen
 os.makedirs(input_dir, exist_ok=True)
@@ -18,20 +18,22 @@ os.makedirs(output_dir, exist_ok=True)
 
 @app.post("/convert/")
 async def convert_image(request: Request, file: UploadFile = File(...)):
-    if file.content_type not in ["image/jpg", "image/png"]:
+    if file.content_type not in ["image/jpeg", "image/png"]:
         raise HTTPException(status_code=400, detail="Archivo no soportado. Solo se aceptan imágenes JPEG o PNG.")
 
-    filename = os.path.basename(file.filename)
+    unique_id = str(uuid4())
+    filename = f"{unique_id}-{os.path.basename(file.filename)}"
     input_path = os.path.join(input_dir, filename)
-    output_filename = f"{os.path.splitext(filename)[0]}.svg"
+    output_filename = f"{unique_id}.svg"
     output_path = os.path.join(output_dir, output_filename)
 
     try:
         # Guardar la imagen de entrada
         with open(input_path, "wb") as image_file:
             shutil.copyfileobj(file.file, image_file)
-
+        
         # Convertir la imagen a SVG
+        # Asegúrese de que vtracer.convert_image_to_svg_py tome el path de entrada y salida correctamente
         vtracer.convert_image_to_svg_py(input_path, output_path)
 
         # Generar URL de descarga para el archivo SVG
@@ -51,9 +53,11 @@ async def convert_image(request: Request, file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Error durante la conversión: {str(e)}")
 
     finally:
-        # Cerrar el archivo y eliminar los archivos de entrada
-        file.file.close()
-        os.remove(input_path)
+        # Opcional: Puede que no quieras eliminar el archivo de entrada después de la conversión
+        # Esto puede ser útil para guardar un historial de lo que se ha procesado
+        # Si decides eliminarlo, descomenta la línea siguiente
+        # os.remove(input_path)
+        pass
 
 @app.get("/images/{path:path}", name="get_svg_image")
 async def get_svg_image(path: str):
